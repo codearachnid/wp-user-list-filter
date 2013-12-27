@@ -25,12 +25,36 @@ if ( !defined( 'ABSPATH' ) )
 /**
  *  Include required files to get this show on the road
  */
+
 require_once 'wp-user-list-filter.php';
 
 function wp_user_list_filter(){
-	if( current_user_can( 'list_users' ) ){
-		// if user can manage users let's load up filters
-		WP_User_List_Filter::instance();
+	// check if user can list users & WooCommerce is active
+	if( current_user_can( 'list_users' ) && 
+		in_array( 'woocommerce/woocommerce.php', apply_filters( 'active_plugins', get_option( 'active_plugins' ) ) ) ){
+		// load up filters
+		$wp_user_list_filter = WP_User_List_Filter::instance();
+		$wp_user_list_filter->add_filter('paying_customer', array(
+				'label' => __( 'Is paying customer' ),
+				'column' => 'paying_customer',
+				'items' => array( 1 => 'True', 0 => 'False')
+				));
+
+		$wp_user_list_filter->add_filter('completed_orders', array(
+				'label' => __( 'Completed orders' ),
+				'column' => '_order_count'
+				));
 	}
 }
 add_action( 'admin_init', 'wp_user_list_filter', 1 );
+
+
+
+function wp_user_list_paying( $value, $key ){
+	if( $key == 'paying_customer' ){
+		return $value == 1 ? 'True' : 'False';
+	} else {
+		return $value;
+	}
+}
+add_filter( 'wp_user_list_filter_item_from_db', 'wp_user_list_paying', 10, 2);

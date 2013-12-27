@@ -8,162 +8,127 @@ if( !class_exists('WP_User_List_Filter') ){
 
 		private static $_this;
 		private $is_active = false;
-		public $export = false; // Show export button? (Currently does nothing)
+		private $desired_screen = 'users.php';
+		private $filters = array();
+		private $selected = array();
+		private $default;
 
 		function __construct() {
-			add_action( 'admin_notices', array( $this, 'maybe_show_filters' ) );
-			add_action( 'admin_footer_text', array( $this, 'footer' ) );
+			$this->default = apply_filters( 'wp_user_list_filter_default', array(
+				'label' => __('Filter by'),
+				'column' => null,
+				'items' => array()
+				));
+
+			add_action( 'restrict_manage_users', array( $this, 'inline_filters' ) );
+			add_filter( 'pre_user_query', array( $this, 'pre_user_query' ) );
 		}
 
-		function is_active(){
-			global $pagenow;
-			$desired_screen = 'users.php';
+		function pre_user_query( $user_query ){
+			if( $this->selected_filters() ){
 
-			// Exit early on autosave
-			if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) {
-				$this->is_active = false;
-			}
-			
-			// Inline save?
-			if ( defined( 'DOING_AJAX') && DOING_AJAX && isset($_POST['screen']) && $desired_screen === $_POST['screen'] ) {
-				$this->is_active = true;
-			}
-			
-			if ( $desired_screen === $pagenow ) {
-				$this->is_active = true;
-			} else {
-				$this->is_active = false;
-			}
+				global $wpdb;
 
-			return apply_filters( 'wp_user_list_filter_is_active', $this->is_active );
-		}
+				remove_filter( 'pre_user_query', array( $this, 'pre_user_query' ) );
 
-		function footer( $pass_through ){
-			if ( !$this->is_active() )
-				return false;
+				$user_id_args  = array(
+					'fields' => 'ID',
+					'meta_query' => array()
+					);
 
-			?>
-			<script>
-				// move the filter block below the title and alerts because we don't have a hook on users.php
-				jQuery('#wp-user-list-filter').insertAfter( ".wrap > h2:first" );
-
-
-/*
-jQuery(document).ready(function($) {
-	
-	// filters & columns box. Move into place. Show/hide.
-	var theFilters = $("#the-filters"),
-	tribeFilters = $("#tribe-filters"),
-	tribeFiltersHeader = tribeFilters.find("h3");
-
-	tribeFilters
-		.insertAfter(".wrap > h2:first")
-		.removeClass("wrap");
-	tribeFiltersHeader.click(function() {
-		if ( theFilters.is(':visible') )
-			$.cookie("hideFiltersAndColumns", "true"); // cookies only store strings
-		else
-			$.cookie("hideFiltersAndColumns", "false");
-		
-		theFilters.toggle();
-		$("#filters-wrap").toggleClass("closed");
-	});
-	// hide it if it was hidden
-	if ( $.cookie("hideFiltersAndColumns") === "true" )
-		tribeFiltersHeader.click();
-	
-	// Also the arrow
-	tribeFilters.find(".handlediv").click(function() { tribeFiltersHeader.click()	})
-	
-	// so we preserve our state when clicking on all/published/drafts
-
-	$(".subsubsub a").click(function(event) {
-		event.preventDefault();
-		var url = $(this).attr("href"),
-		form = $("#the-filters");
-		form.attr("action", url).submit();
-	});
-	
-	// un-fixed width columns
-	$("#posts-filter .fixed").removeClass("fixed");
-
-	// Save/Cancel Filters
-	$("#the-filters .save.button-secondary").click(function(ev) {
-		$(this).parent().hide().find("input").attr("disabled", "disabled");
-		$("#the-filters .save-options").show();
-		$("#filter_name").focus();
-		ev.preventDefault();
-	});
-	$("#cancel-save").click(function(ev) {
-		$(this).parent().hide();
-		$("#the-filters .actions").show().find("input").removeAttr("disabled");
-		ev.preventDefault();
-	});
-	
-	// Save that Filter
-	$("#filter_name").keypress(function(ev){
-		if ( ev.keyCode == 13 ) {
-			ev.preventDefault()
-			$(this).next().click()
-		}
-	})
-	
-	// Maintain sorting
-	$(".tribe-filters-active .wp-list-table .sortable a").click(function(ev) {
-		theFilters.attr("action", this.href).submit()
-		ev.preventDefault()
-	})
-
-});
-*/
-			</script>
-			<style>
-				#wp-user-list-filter form{
-					padding: 10px;
+				foreach( $this->selected as $key => $value) {
+					$user_id_args['meta_query'][] = array(
+						'key' => $this->filters[ $key ]->column,
+						'value' => $value
+						);
 				}
-			</style>
-			<?php
-			return $pass_through;
+				$wp_user_query = new WP_User_Query($user_id_args);
+				$user_ids = $wp_user_query->get_results();
+
+				if( !empty($user_ids)){
+					$user_query->query_vars['include'] = wp_parse_args( (array) $user_ids, (array) $user_query->query_vars['include'] );
+					$user_query->query_where .= sprintf( " AND ID IN (%s) ", implode(",", $user_ids) );	
+				}
+
+				add_filter( 'pre_user_query', array( $this, 'pre_user_query' ) );
+
+			}
+			
+			return $user_query;
 		}
 
-		function maybe_show_filters(){
-			if ( !$this->is_active() )
-				return false;
+		function add_filter( $key, $args ){
+			$this->filters[ $key ] = (object) wp_parse_args( (array) $args, (array) $this->default );
 
-			$action_url = add_query_arg('post_type', $GLOBALS['typenow'], admin_url('users.php') );
+			// setup default values for items
+			if( empty($this->filters[ $key ]->items) )
+				$this->set_items_from_db( $key );
+		}
 
-			?>
-			<div id="wp-user-list-filter" class="metabox-holder meta-box-sortables">
-				<div id="filters-wrap" class="postbox">
-					<div class="handlediv" title="<?php _e('Click to toggle', 'wp-user-list-filter') ?>"></div>
-					<h3 title="<?php _e('Click to toggle', 'wp-user-list-filter') ?>"><?php _e('Filters &amp; Columns', 'wp-user-list-filter' ); ?></h3>
-					<form id="the-filters" action="<?php echo $action_url; ?>" method="post">
-						<div class="alignleft filters">
-							FILTERS
-						</div>
-						<div class="alignright filters">
-							COLUMNS
-						</div>
-						<br class="clear" />
-						<div class="alignleft actions">
-							<input type="submit" name="tribe-apply" value="<?php _e('Apply', 'wp-user-list-filter') ?>" class="button-primary" />
-							<input type="submit" name="tribe-clear" value="<?php _e('Clear', 'wp-user-list-filter') ?>" class="button-secondary" />
-							<input type="submit" name="save" value="<?php _e('Save', 'wp-user-list-filter') ?>" class="button-secondary save" />
-							<?php if ( $this->export ) : ?>
-							<input type="submit" name="csv" value="Export" title="<?php _e('Export to CSV', 'wp-user-list-filter') ?>" class="button-secondary csv" />
-							<?php endif; ?>
+		function set_items_from_db( $key ){
 
-						</div>
-						<div class="alignleft save-options">
-							<label for="filter_name"><?php _e('Filter Name', 'wp-user-list-filter') ?> </label><input type="text" name="filter_name" value="" id="filter_name" />
-							<input type="submit" name="tribe-save" value="<?php _e('Save', 'wp-user-list-filter') ?>" class="button-primary save" />
-							<a href="#" id="cancel-save"><?php _e('Cancel', 'wp-user-list-filter') ?></a>
-						</div>
-						<br class="clear" />
-					</form>
-				</div>
-			</div>
-			<?php
+			global $wpdb;
+			$items = array();
+			$values = $wpdb->get_col( "SELECT meta_value FROM $wpdb->usermeta WHERE meta_key = '{$this->filters[ $key ]->column}' ORDER BY meta_value DESC;" );
+			if( !empty($values)){
+				foreach( $values as $value ){
+					$value = maybe_unserialize( $value );
+					$items[ $value ] = apply_filters( 'wp_user_list_filter_item_from_db', $value, $key, $this->filters[ $key ] );
+				}
+				$this->filters[ $key ]->items = apply_filters( 'wp_user_list_filter_set_items_from_db', $items );
+			}
+		}
+
+		function selected_filters(){
+			if( !empty($_REQUEST['filterit']) ){
+				foreach( $this->filters as $key => $filter ) {
+					if( isset( $_REQUEST[ $key ]) && ($_REQUEST[ $key ]==="0"||$_REQUEST[ $key ] ) ){
+						$this->selected[ $key ] = $_REQUEST[ $key ];
+					}
+				}
+			}
+			return count( $this->selected );
+		}
+
+		function inline_filters(){
+
+			$filters = '';
+
+			foreach( $this->filters as $key => $filter ) {
+
+				$add_filter = false;
+				$filter_html = sprintf('<label class="screen-reader-text" for="new_role">%s</label>',
+					$filter->label
+					);
+
+				$filter_html .= sprintf('<select name="%s"><option value="">%s</option>', 
+					$key,
+					$filter->label 
+					);
+
+				foreach ( $filter->items as $index => $option ) {
+					$add_filter = true;
+					$selected = isset( $this->selected[ $key ] ) && $this->selected[ $key ] == $index ? ' selected="selected" ' : '';
+					$filter_html .= sprintf('<option value="%s" %s>%s</option>', 
+						esc_attr($index), 
+						$selected, 
+						$option
+						);
+				}
+				
+				$filter_html .= '</select>';
+				if( $add_filter )
+					$filters .= $filter_html;
+			
+			}
+
+
+			if( !empty($filters)){
+				// close down "bulk change" and reopen div for filters
+				echo '</div><div class="alignleft actions">' . $filters;
+				submit_button( __( 'Filter' ), 'button', 'filterit', false );
+			}
+
 		}
 
 		/**
