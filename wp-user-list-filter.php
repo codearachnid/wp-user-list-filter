@@ -42,6 +42,8 @@ if( !class_exists('WP_User_List_Filter') ){
 						'value' => $value
 						);
 				}
+
+				$user_id_args = apply_filters( 'wp_user_list_filter_user_id_args', $user_id_args );
 				$wp_user_query = new WP_User_Query($user_id_args);
 				$user_ids = $wp_user_query->get_results();
 
@@ -57,8 +59,12 @@ if( !class_exists('WP_User_List_Filter') ){
 			return $user_query;
 		}
 
+		function get_filter( $key ){
+			return !empty( $this->filters[ $key ] ) ? $this->filters[ $key ] : $this->default;
+		}
+
 		function add_filter( $key, $args ){
-			$this->filters[ $key ] = (object) wp_parse_args( (array) $args, (array) $this->default );
+			$this->filters[ $key ] = apply_filters( 'wp_user_list_filter_add_filter', (object) wp_parse_args( (array) $args, (array) $this->default ) );
 
 			// setup default values for items
 			if( empty($this->filters[ $key ]->items) )
@@ -66,7 +72,6 @@ if( !class_exists('WP_User_List_Filter') ){
 		}
 
 		function set_items_from_db( $key ){
-
 			global $wpdb;
 			$items = array();
 			$values = $wpdb->get_col( "SELECT meta_value FROM $wpdb->usermeta WHERE meta_key = '{$this->filters[ $key ]->column}' ORDER BY meta_value DESC;" );
@@ -83,10 +88,11 @@ if( !class_exists('WP_User_List_Filter') ){
 			if( !empty($_REQUEST['filterit']) ){
 				foreach( $this->filters as $key => $filter ) {
 					if( isset( $_REQUEST[ $key ]) && ($_REQUEST[ $key ]==="0"||$_REQUEST[ $key ] ) ){
-						$this->selected[ $key ] = $_REQUEST[ $key ];
+						$this->selected[ $key ] = apply_filters( 'wp_user_list_filter_selected_filter', $_REQUEST[ $key ], $key );
 					}
 				}
 			}
+			$this->selected = apply_filters( 'wp_user_list_filter_selected_filters', $this->selected );
 			return count( $this->selected );
 		}
 
@@ -118,7 +124,7 @@ if( !class_exists('WP_User_List_Filter') ){
 				
 				$filter_html .= '</select>';
 				if( $add_filter )
-					$filters .= $filter_html;
+					$filters .= apply_filters( 'wp_user_list_filter_inline_filters', $filter_html, $key, $filter );
 			
 			}
 
