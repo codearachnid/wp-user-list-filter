@@ -15,7 +15,7 @@ if( !class_exists('WP_User_List_Filter') ){
 
 		function __construct() {
 			$this->default = apply_filters( 'wp_user_list_filter_default', array(
-				'label' => __('Filter by'),
+				'label' => __('Filter by', 'wp-user-list-filter'),
 				'column' => null,
 				'items' => array()
 				));
@@ -126,7 +126,7 @@ if( !class_exists('WP_User_List_Filter') ){
 			if( !empty($filters)){
 				// close down "bulk change" and reopen div for filters
 				echo '</div><div class="alignleft actions">' . $filters;
-				submit_button( __( 'Filter' ), 'button', 'filterit', false );
+				submit_button( __( 'Filter', 'wp-user-list-filter' ), 'button', 'filterit', false );
 			}
 
 		}

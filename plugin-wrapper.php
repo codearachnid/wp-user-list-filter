@@ -35,13 +35,13 @@ function wp_user_list_filter(){
 		// load up filters
 		$wp_user_list_filter = WP_User_List_Filter::instance();
 		$wp_user_list_filter->add_filter('paying_customer', array(
-				'label' => __( 'Is paying customer' ),
+				'label' => __( 'Is paying customer', 'wp-user-list-filter' ),
 				'column' => 'paying_customer',
 				'items' => array( 1 => 'True', 0 => 'False')
 				));
 
 		$wp_user_list_filter->add_filter('completed_orders', array(
-				'label' => __( 'Completed orders' ),
+				'label' => __( 'Completed orders', 'wp-user-list-filter' ),
 				'column' => '_order_count'
 				));
 	}
